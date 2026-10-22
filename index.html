@@ -3147,6 +3147,54 @@ $("#tbody").addEventListener("change",e=>{
     if(isFinite(v)){v=Math.min(100,Math.max(0,v));t.value=v;setMeta("cloud",t.dataset.id,String(v));renderCloudMeters();refreshStatusCells();}
   }
 });
+/* ===== keyboard entry: Enter / arrow keys move between cells; mouse wheel never changes a number ===== */
+const CELL_SEL="input.num-in, input.ds-in, textarea.rmk-in";
+const cellKey=el=>el.dataset.num||(el.hasAttribute("data-dstrip")?"ds":"rmk");
+function focusCell(el){if(!el)return;el.focus();try{el.select();}catch(err){}el.scrollIntoView({block:"nearest",inline:"nearest"});}
+function moveVertical(from,dir){
+  let tr=from.closest("tr");const k=cellKey(from);
+  while((tr=dir>0?tr.nextElementSibling:tr.previousElementSibling)){
+    const hit=[...tr.querySelectorAll(CELL_SEL)].find(x=>cellKey(x)===k);
+    if(hit){focusCell(hit);return true;}
+  }
+  return false;
+}
+function moveHorizontal(from,dir){
+  const list=[...from.closest("tr").querySelectorAll(CELL_SEL)],i=list.indexOf(from),nx=list[i+dir];
+  if(nx){focusCell(nx);return true;}
+  return false;
+}
+$("#tbody").addEventListener("keydown",e=>{
+  const t=e.target;
+  if(!t.matches||!t.matches(CELL_SEL)||e.isComposing||e.altKey||e.ctrlKey||e.metaKey)return;
+  const isTA=t.tagName==="TEXTAREA",isNum=t.type==="number";
+  let ok=false;
+  if(e.key==="Enter"){
+    if(isTA&&e.shiftKey)return;                    /* Shift+Enter = new line in Remark */
+    e.preventDefault();moveVertical(t,e.shiftKey?-1:1);return;
+  }
+  if(e.key==="ArrowDown"||e.key==="ArrowUp"){
+    const dir=e.key==="ArrowDown"?1:-1;
+    if(isTA){                                      /* keep normal caret movement inside a multi-line Remark */
+      const atEdge=dir>0?t.selectionStart===t.value.length&&t.selectionEnd===t.value.length:t.selectionStart===0&&t.selectionEnd===0;
+      if(!atEdge)return;
+    }
+    e.preventDefault();moveVertical(t,dir);return;
+  }
+  if(e.key==="ArrowRight"||e.key==="ArrowLeft"){
+    const dir=e.key==="ArrowRight"?1:-1;
+    if(!isNum){                                    /* text boxes: move only when the caret is at the edge */
+      const atEdge=dir>0?t.selectionStart===t.value.length&&t.selectionEnd===t.value.length:t.selectionStart===0&&t.selectionEnd===0;
+      if(!atEdge)return;
+    }
+    if(moveHorizontal(t,dir))e.preventDefault();
+  }
+});
+/* mouse wheel over a focused number box would change its value: drop focus so the page just scrolls */
+document.addEventListener("wheel",e=>{
+  const a=document.activeElement;
+  if(a&&a.tagName==="INPUT"&&a.type==="number"&&a.matches("#tbody *"))a.blur();
+},{passive:true,capture:true});
 /* Area box: raw number while focused, 1,000.00 after leaving */
 $("#tbody").addEventListener("focusin",e=>{
   const t=e.target;if(!t.matches('input[data-num="area"]'))return;
