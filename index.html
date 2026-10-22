@@ -348,6 +348,7 @@ details.oldm>summary{cursor:pointer;font-family:var(--display);font-size:13px;fo
   <button role="tab" aria-selected="true" data-tab="dwl">Downlink <span class="cnt" id="cDwl">0</span></button>
   <button role="tab" aria-selected="false" data-tab="acq">Acquisitions <span class="cnt" id="cAcq">0</span></button>
   <button role="tab" aria-selected="false" data-tab="prod" title="รายการที่ Status CUF = Production">Production <span class="cnt" id="cProd">0</span></button>
+  <button role="tab" aria-selected="false" data-tab="nodl" title="รายการ Acquisition ที่ยังไม่ถูกดาวน์โหลด">No Downlink <span class="cnt" id="cNodl">0</span></button>
   <button role="tab" aria-selected="false" data-tab="rmk" title="รายการที่กรอก Remark ไว้">Remark <span class="cnt" id="cRmk">0</span></button>
 </nav>
 
@@ -2761,6 +2762,10 @@ VIEWS.rmk={label:"Remark",suffix:"_Remark",grp:[],
 VIEWS.prod={label:"Production",suffix:"_Production",grp:[],
   cols:["Mission Plan\n(Date)","Orbit\nDownload","ON_BOARD_ID","ACQ_Request Name","ACQ_BEGIN","ACQ_END","Data Strip"],
   arr:r=>[r.pdate,r.pOrbit,r.id,r.req,fmt(r.b),fmt(r.e),metaVal("dstrip",r)]};
+/* No Downlink sheet: every ACQ datastrip that has not been downloaded yet (no Downlink orbit) */
+VIEWS.nodl={label:"No Downlink",suffix:"_NoDownlink",grp:[],
+  cols:["Mission Plan\n(Date)","Orbit","EMP","ON_BOARD_ID","ACQ_Request Name","ACQ_BEGIN","ACQ_END","Downlink ORBIT"],
+  arr:r=>[r.pdate,r.orbit,r.emp,r.id,r.req,fmt(r.b),fmt(r.e),"ยังไม่ดาวน์โหลด"]};
 ["dwl","acq"].forEach(k=>{const f=VIEWS[k].arr;VIEWS[k].arr=r=>r.empty?
   (k==="dwl"?[r.plan,mpStatus(r.pkey),r.orbit,r.emp,"","","0","","","","ไม่มี Downlink","","","","","","",""]
            :[r.plan,mpStatus(r.pkey),r.orbit,r.emp,"0","","","ไม่มี Acquisitions","","","",""]):f(r);});
@@ -2778,6 +2783,12 @@ function prodRows(){
   ROWS.dwl.forEach(r=>{if(cufOf(r)!=="Production"||seen.has(r.id))return;seen.add(r.id);
     const h=acqLookup(r.id);
     out.push({pdate:planDateFmt(r.pkey),pOrbit:r.pOrbit||"",id:r.id,req:(h&&h.r.req)||r.req,b:h?h.r.b:"",e:h?h.r.e:"",emp:r.emp});});
+  return out.sort((a,b)=>(a.pdate||"").localeCompare(b.pdate||"")||(+a.id)-(+b.id));
+}
+function nodlRows(){
+  const out=[];
+  ROWS.acq.forEach(r=>{if(r.dwlOrbit)return;
+    out.push({pdate:planDateFmt(r.pkey),orbit:r.orbit,pOrbit:"",id:r.id,req:r.req,b:r.b,e:r.e,emp:r.emp});});
   return out.sort((a,b)=>(a.pdate||"").localeCompare(b.pdate||"")||(+a.id)-(+b.id));
 }
 function rmkRows(){
@@ -2798,9 +2809,10 @@ const DEFW={
   dwl:[180,112,70,150,104,104,92,96,112,104,300,104,104,104,112,132,200,260],
   acq:[180,112,70,150,92,112,104,300,104,104,136,200],
   rmk:[130,100,120,320,150,150,340],
-  prod:[130,100,120,320,150,150,240]
+  prod:[130,100,120,320,150,150,240],
+  nodl:[130,70,150,120,320,150,150,150]
 };
-let COLW={dwl:null,acq:null,rmk:null,prod:null};
+let COLW={dwl:null,acq:null,rmk:null,prod:null,nodl:null};
 function loadColW(){
   let s={};try{s=JSON.parse(localStorage.getItem(COLW_KEY)||"{}")||{};}catch(err){console.error(err);}
   if(!s._swap&&Array.isArray(s.dwl)&&(s.dwl.length===17||s.dwl.length===18)){   /* Data Strip now sits before Remark */
@@ -2938,7 +2950,7 @@ function renderReqMeters(){
 }
 function filterRows(){
   const cfg=VIEWS[TAB],q=$("#q").value.trim().toLowerCase(),fe=$("#fEmp").value,fo=$("#fOrbit").value;
-  const base=TAB==="rmk"?rmkRows():TAB==="prod"?prodRows():
+  const base=TAB==="rmk"?rmkRows():TAB==="prod"?prodRows():TAB==="nodl"?nodlRows():
     (TAB==="dwl"||TAB==="acq")?[...ROWS[TAB],...(ROWS[TAB+"None"]||[])].sort((a,b)=>a.emp<b.emp?-1:a.emp>b.emp?1:0):ROWS[TAB];
   return base.filter(r=>{
     if(fe&&r.emp!==fe)return false;
@@ -2951,12 +2963,20 @@ function render(){
   const cfg=VIEWS[TAB];
   $("#cRmk").textContent=rmkRows().length;
   $("#cProd").textContent=prodRows().length;
+  $("#cNodl").textContent=nodlRows().length;
   $("#thead").innerHTML="<tr>"+cfg.cols.map((c,i)=>`<th${cfg.grp.includes(i)?' class="grp"':""}>${esc(c).replace(/\n/g,"<br>")}<span class="rz" data-i="${i}" title="ลากเพื่อปรับความกว้าง · ดับเบิลคลิกเพื่อรีเซ็ต"></span></th>`).join("")+"</tr>";
   applyWidths(colWidths(TAB));
   VIEW=filterRows();
   const tb=$("#tbody"),n=cfg.cols.length;
-  if(!VIEW.length){tb.innerHTML=`<tr><td colspan="${n}" class="empty">${TAB==="rmk"?"ยังไม่มีรายการที่กรอก Remark — พิมพ์ในช่อง Remark ของแท็บ Downlink หรือ Acquisitions แล้วรายการจะแสดงที่นี่":TAB==="prod"?"ยังไม่มีรายการที่ Status CUF = Production — เลือก Production ในช่อง Status CUF ของแท็บ Downlink หรือ Acquisitions แล้วรายการจะแสดงที่นี่":"ไม่พบข้อมูลตามเงื่อนไขที่เลือก — ล้างคำค้นหรือตัวกรองเพื่อดูทั้งหมด"}</td></tr>`;
+  if(!VIEW.length){tb.innerHTML=`<tr><td colspan="${n}" class="empty">${TAB==="rmk"?"ยังไม่มีรายการที่กรอก Remark — พิมพ์ในช่อง Remark ของแท็บ Downlink หรือ Acquisitions แล้วรายการจะแสดงที่นี่":TAB==="nodl"?"ไม่มีรายการที่ยังไม่ดาวน์โหลด — ทุก Acquisition ถูกดาวน์โหลดแล้ว":TAB==="prod"?"ยังไม่มีรายการที่ Status CUF = Production — เลือก Production ในช่อง Status CUF ของแท็บ Downlink หรือ Acquisitions แล้วรายการจะแสดงที่นี่":"ไม่พบข้อมูลตามเงื่อนไขที่เลือก — ล้างคำค้นหรือตัวกรองเพื่อดูทั้งหมด"}</td></tr>`;
     $("#rowcount").textContent="0 แถว";return;}
+  if(TAB==="nodl"){
+    const dash='<span class="dash">—</span>';
+    tb.innerHTML=VIEW.map(r=>`<tr><td class="m">${esc(r.pdate)||dash}</td><td class="num">${esc(r.orbit)||dash}</td>`+
+      `<td class="m">${esc(r.emp)||dash}</td><td class="num">${esc(r.id)}</td><td class="name">${r.req?esc(r.req):dash}</td>`+
+      `<td class="m">${esc(fmt(r.b))||dash}</td><td class="m">${esc(fmt(r.e))||dash}</td><td class="num"><span class="pill no">ยังไม่ดาวน์โหลด</span></td></tr>`).join("");
+    $("#rowcount").textContent=VIEW.length+" แถว (ยังไม่ดาวน์โหลด)";return;
+  }
   if(TAB==="prod"){
     const dash='<span class="dash">—</span>';
     tb.innerHTML=VIEW.map(r=>`<tr><td class="m">${esc(r.pdate)||dash}</td><td class="num">${r.pOrbit?esc(r.pOrbit):dash}</td>`+
@@ -3224,7 +3244,7 @@ $("#thead").addEventListener("dblclick",e=>{
   const i=+h.dataset.i;colWidths(TAB)[i]=DEFW[TAB][i];applyWidths(colWidths(TAB));saveColW();
 });
 $("#colreset").addEventListener("click",()=>{
-  COLW={_swap:1,dwl:DEFW.dwl.slice(),acq:DEFW.acq.slice(),rmk:DEFW.rmk.slice(),prod:DEFW.prod.slice()};saveColW();applyWidths(colWidths(TAB));toast("รีเซ็ตความกว้างคอลัมน์แล้ว");
+  COLW={_swap:1,dwl:DEFW.dwl.slice(),acq:DEFW.acq.slice(),rmk:DEFW.rmk.slice(),prod:DEFW.prod.slice(),nodl:DEFW.nodl.slice()};saveColW();applyWidths(colWidths(TAB));toast("รีเซ็ตความกว้างคอลัมน์แล้ว");
 });
 
 /* Safe Mode dates (saved in this browser with the other manual data) */
