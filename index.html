@@ -3612,11 +3612,24 @@ BOOTED=true;
 syncStart();
 
 /* ============ Dashboard (Request Name / Cloud Cover / Area) ============ */
+/* Dashboard follows the search box (#q): same match rule as the table (searches every column of the tab) */
+function dashQuery(){const el=document.querySelector("#q");return el?el.value.trim().toLowerCase():"";}
+function dashFilter(k){
+  const all=(ROWS&&ROWS[k])||[],q=dashQuery();
+  if(!q)return all;
+  const arr=VIEWS[k].arr;
+  return all.filter(r=>arr(r).join(" ").toLowerCase().includes(q));
+}
+/* colour order is fixed from the UNFILTERED data so a category keeps its colour while searching */
+function dashColorOrder(k){
+  const c={};((ROWS&&ROWS[k])||[]).forEach(r=>{const t=reqCategory(r.req)||"อื่น ๆ";c[t]=(c[t]||0)+1;});
+  return Object.keys(c).sort((a,b)=>c[b]-c[a]);
+}
 const DASH_COLORS=["#12A874","#1A63D6","#F58220","#0B7F58","#5B8DEF","#E0A100","#2BC4C4","#8A6FDF","#C23B34","#7A8F89"];
 function renderDash(){
   try{
     if(typeof ROWS==="undefined"||!ROWS||!ROWS.dwl||!$("#dash"))return;
-    const rows=ROWS.dwl,n=rows.length;
+    const rows=dashFilter("dwl"),n=rows.length,q=dashQuery();
     const f2=x=>(Math.round(x*100)/100).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});
     /* ---- aggregate ---- */
     const cnt={},areaSum={},areaFill={};let areaAll=0,areaN=0,ccN=0,ccSum=0;
@@ -3629,7 +3642,7 @@ function renderDash(){
       if(isFinite(cc)){ccN++;ccSum+=cc;}
     });
     const cats=Object.keys(cnt).sort((a,b)=>cnt[b]-cnt[a]);
-    const col={};cats.forEach((c,i)=>col[c]=DASH_COLORS[i%DASH_COLORS.length]);
+    const order=dashColorOrder("dwl"),col={};cats.forEach(c=>{const i=order.indexOf(c);col[c]=DASH_COLORS[(i<0?0:i)%DASH_COLORS.length];});
     /* ---- KPIs ---- */
     const kpi=(k,v,s,c)=>`<div class="kpi" style="--c:${c}"><div class="k">${k}</div><div class="v">${v}</div><div class="s">${s}</div></div>`;
     $("#dashKpis").innerHTML=
@@ -3637,9 +3650,9 @@ function renderDash(){
       kpi("Area รวม",f2(areaAll)+' <small>km²</small>',"กรอกแล้ว "+areaN+" / "+n,"var(--night)")+
       kpi("Cloud Cover เฉลี่ย",ccN?f2(ccSum/ccN)+' <small>%</small>':"—","กรอกแล้ว "+ccN+" / "+n,"var(--orange)")+
       kpi("Request มากที่สุด",cats[0]?esc(cats[0]):"—",cats[0]?cnt[cats[0]]+" datastrip ("+Math.round(cnt[cats[0]]/n*100)+"%)":"ยังไม่มีข้อมูล","#8A6FDF");
-    $("#dashHint").textContent=n?"อัปเดตอัตโนมัติเมื่อกรอกหรือแก้ค่า":"";
+    $("#dashHint").textContent=q?("กำลังแสดงเฉพาะที่ค้นหา “"+$("#q").value.trim()+"” · Download "+n+" / "+ROWS.dwl.length+" · ACQ "+dashFilter("acq").length+" / "+ROWS.acq.length):(ROWS.dwl.length?"อัปเดตอัตโนมัติเมื่อกรอกหรือแก้ค่า":"");
     /* ---- Donut ---- */
-    if(!n){$("#dashDonut").innerHTML='<div class="dempty">ยังไม่มีข้อมูล Download — เพิ่มไฟล์ XML</div>';}
+    if(!n){$("#dashDonut").innerHTML='<div class="dempty">'+(q?'ไม่พบ Request Name ที่ตรงกับคำค้นหา':'ยังไม่มีข้อมูล Download — เพิ่มไฟล์ XML')+'</div>';}
     else{
       const R=70,C=2*Math.PI*R;let off=0;
       const segs=cats.map(c=>{const len=cnt[c]/n*C;const s=`<circle cx="95" cy="95" r="${R}" stroke="${col[c]}" stroke-dasharray="${Math.max(len-1.5,0.5)} ${C-Math.max(len-1.5,0.5)}" stroke-dashoffset="${-off}"><title>${esc(c)}: ${cnt[c]}</title></circle>`;off+=len;return s;}).join("");
@@ -3659,7 +3672,7 @@ function renderDash(){
     const am=Math.max(1e-9,...aCats.map(c=>areaSum[c]||0));
     $("#dashArea").innerHTML=n?aCats.map(c=>`<div class="hrow" style="--c:${col[c]}"><div class="nm" title="${esc(c)}">${esc(c)}<small>กรอกแล้ว ${areaFill[c]||0}/${cnt[c]}</small></div><div class="tr"><i style="width:${(areaSum[c]||0)/am*100}%"></i></div><div class="vv">${f2(areaSum[c]||0)} <small>km²</small></div></div>`).join("")+
       `<div class="hrow" style="--c:var(--night);border-top:2px solid var(--line);margin-top:4px"><div class="nm">รวมทุก Request<small>กรอกแล้ว ${areaN}/${n}</small></div><div></div><div class="vv">${f2(areaAll)} <small>km²</small></div></div>`
-      :'<div class="dempty">ยังไม่มีข้อมูล</div>';
+      :'<div class="dempty">'+(q?'ไม่พบข้อมูลตามคำค้นหา':'ยังไม่มีข้อมูล')+'</div>';
   }catch(err){console.error("Dashboard error",err);}
 }
 (function(){
@@ -3674,13 +3687,13 @@ function renderDash(){
 
 function renderDashAcq(){
   try{
-    const rows=ROWS.acq||[],n=rows.length;
+    const rows=dashFilter("acq"),n=rows.length,q=dashQuery();
     const tot={},done={};
     rows.forEach(r=>{const c=reqCategory(r.req)||"อื่น ๆ";tot[c]=(tot[c]||0)+1;if(r.dwlOrbit)done[c]=(done[c]||0)+1;});
     const cats=Object.keys(tot).sort((a,b)=>tot[b]-tot[a]);
-    if(!n){$("#dashAcq").innerHTML='<div class="dempty">ยังไม่มีข้อมูล ACQ</div>';return;}
+    if(!n){$("#dashAcq").innerHTML='<div class="dempty">'+(q?'ไม่พบ Request Name ที่ตรงกับคำค้นหา':'ยังไม่มีข้อมูล ACQ')+'</div>';return;}
     const R=70,C=2*Math.PI*R;let off=0;
-    const col=c=>DASH_COLORS[cats.indexOf(c)%DASH_COLORS.length];
+    const order=dashColorOrder("acq"),col=c=>DASH_COLORS[Math.max(0,order.indexOf(c))%DASH_COLORS.length];
     const segs=cats.map(c=>{const len=tot[c]/n*C,l=Math.max(len-1.5,0.5);const x=`<circle cx="95" cy="95" r="${R}" stroke="${col(c)}" stroke-dasharray="${l} ${C-l}" stroke-dashoffset="${-off}"><title>${esc(c)}: ${tot[c]}</title></circle>`;off+=len;return x;}).join("");
     $("#dashAcq").innerHTML=`<div class="donut-wrap"><div class="donut"><svg viewBox="0 0 190 190"><circle cx="95" cy="95" r="${R}" stroke="#E8F0EC"/>${segs}</svg><div class="mid"><b>${n}</b><span>datastrip</span></div></div>
       <div class="legend">${cats.map(c=>`<div class="lg" style="--c:${col(c)}"><i></i><span class="n" title="${esc(c)}">${esc(c)}</span><span class="q">${tot[c]}</span><span class="p">${(tot[c]/n*100).toFixed(1)}%</span></div>`).join("")}</div></div>`;
@@ -3690,6 +3703,12 @@ function renderDashAcq(){
   const base=renderDash;
   window.renderDash=function(){base();renderDashAcq();};
   renderDash();
+})();
+
+/* Dashboard live-updates as the user types in the search box */
+(function(){
+  const q=document.querySelector("#q");
+  if(q){q.addEventListener("input",()=>window.renderDash());q.addEventListener("search",()=>window.renderDash());}
 })();
 </script>
 
