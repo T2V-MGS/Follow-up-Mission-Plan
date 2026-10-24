@@ -2565,13 +2565,13 @@ function flat(d){const out=[];
   return out;}
 const count=(d,w)=>w==="dl"?d.passes.reduce((s,p)=>s+p.rows.length,0):d.acq.length;
 
-/* ============ MPLN_T2V date helpers: latest 5-day window + monthly view + year/month grouping ============ */
+/* ============ MPLN_T2V date helpers: latest 2-day window + monthly view + year/month grouping ============ */
 const MONTHS_TH=["มกราคม","กุมภาพันธ์","มีนาคม","เมษายน","พฤษภาคม","มิถุนายน","กรกฎาคม","สิงหาคม","กันยายน","ตุลาคม","พฤศจิกายน","ธันวาคม"];
 const planDate=p=>(p.stamp||"").slice(0,8);                              // YYYYMMDD from MPLN_T2V_<stamp>_...
 const dateFmt=d=>d.slice(0,4)+"-"+d.slice(4,6)+"-"+d.slice(6,8);
-/* latest 5 dates that actually have plans (older 5-day sets removed) */
+/* latest 2 dates that actually have plans (older sets removed) */
 function latestDates(){
-  return [...new Set(PLANS.map(planDate).filter(Boolean))].sort().reverse().slice(0,5);
+  return [...new Set(PLANS.map(planDate).filter(Boolean))].sort().reverse().slice(0,2);
 }
 /* months (YYYYMM) that have plans, newest first */
 function planMonths(){
@@ -2587,7 +2587,7 @@ function rangeDates(){          /* Set of YYYYMMDD to show, or null = every day 
 function renderRangeOptions(){
   const sel=$("#fRange"),cur=sel.value||"b0",ds=latestDates();
   const span=ds.length?(()=>{const s=[...ds].sort();return dateFmt(s[0])+" \u2192 "+dateFmt(s[s.length-1]);})():"";
-  let html=`<option value="b0">5 วันล่าสุด${span?" ("+span+(ds.length<5?" · "+ds.length+" วัน":"")+")":""}</option>`;
+  let html=`<option value="b0">2 วันล่าสุด${span?" ("+span+(ds.length<2?" · "+ds.length+" วัน":"")+")":""}</option>`;
   html+=planMonths().map(ym=>`<option value="m${ym}">รายเดือน: ${MONTHS_TH[+ym.slice(4,6)-1]||"ไม่ระบุเดือน"} ${ym.slice(0,4)}</option>`).join("");
   html+='<option value="all">ทุกวัน (ทั้งหมด)</option>';
   sel.innerHTML=html;
